@@ -96,14 +96,27 @@ where CollectionType: RandomAccessCollection,
         var insertions: [IndexPath] = []
         var moves: [(IndexPath, IndexPath)] = []
         
-        items.enumerated().forEach { sectionIndex, items in
-            let rowAtIndex = fromRow(sectionIndex)
+        var notChanged: [IndexPath] = []
+        
+        items.enumerated().forEach { section, items in
+            let rowAtIndex = fromRow(section)
             
-            let changes = delta(newList: items.map { $0.id }, oldList: collection[sectionIndex].map { $0.id })
+            let changesById = delta(newList: items.map { $0.id },
+                                    oldList: collection[section].map { $0.id })
             
-            deletions.append(contentsOf: changes.removals.map(rowAtIndex))
-            insertions.append(contentsOf: changes.insertions.map(rowAtIndex))
-            moves.append(contentsOf: changes.moves.map { (rowAtIndex($0.0), rowAtIndex($0.1)) })
+            let delta = delta(newList: items, oldList: collection[section])
+            for row in 0 ..< items.count {
+                guard !delta.insertions.contains(row),
+                      !delta.removals.contains(row),
+                      !delta.moves.contains(where: { $0 == row || $1 == row }) else {
+                    continue
+                }
+                notChanged.append(.init(row: row, section: section))
+            }
+            
+            deletions.append(contentsOf: changesById.removals.map(rowAtIndex))
+            insertions.append(contentsOf: changesById.insertions.map(rowAtIndex))
+            moves.append(contentsOf: changesById.moves.map { (rowAtIndex($0.0), rowAtIndex($0.1)) })
         }
         
         collection = items
@@ -113,17 +126,28 @@ where CollectionType: RandomAccessCollection,
             if !deletions.isEmpty {
                 tableView.deleteRows(at: deletions, with: rowAnimations.delete)
             }
+            
             if !insertions.isEmpty {
                 tableView.insertRows(at: insertions, with: rowAnimations.insert)
             }
+            
             for move in moves {
                 tableView.moveRow(at: move.0, to: move.1)
             }
         } completion: { [weak self] _ in
-//            self?.tableView.cellForRow(at: <#T##IndexPath#>)
+            guard let indexPathsForVisibleRows = self?.tableView
+                .indexPathsForVisibleRows?
+                .filter({ !notChanged.contains($0) }) else { return }
+            
+            indexPathsForVisibleRows.forEach { indexPath in
+                guard let self = self,
+                      self.collection.count > indexPath.section,
+                      self.collection[indexPath.section].count > indexPath.row,
+                      let cell = self.tableView.cellForRow(at: indexPath) as? CellType else { return }
+                let item = self.collection[indexPath.section][indexPath.row]
+                self.cellConfig(cell, indexPath, item)
+            }
         }
-        
-        tableView.endUpdates()
     }
     
     // MARK: - UITableViewDataSource protocol
