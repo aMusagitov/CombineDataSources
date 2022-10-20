@@ -8,19 +8,22 @@ import Combine
 
 /// A table view controller acting as data source.
 /// `CollectionType` needs to be a collection of collections to represent sections containing rows.
-public class TableViewItemsController<CollectionType>: NSObject, UITableViewDataSource
-    where CollectionType: RandomAccessCollection,
-    CollectionType.Index == Int,
-    CollectionType.Element: Hashable,
-    CollectionType.Element: RandomAccessCollection,
-    CollectionType.Element.Index == Int,
-CollectionType.Element.Element: Hashable {
+public class TableViewItemsController<CollectionType, CellType>: NSObject, UITableViewDataSource
+where CollectionType: RandomAccessCollection,
+      CollectionType.Index == Int,
+      CollectionType.Element: Hashable,
+      CollectionType.Element: RandomAccessCollection,
+      CollectionType.Element.Index == Int,
+      CollectionType.Element.Element: Hashable,
+      CollectionType.Element.Element: Identifiable,
+      CellType: UITableViewCell {
     
     public typealias Element = CollectionType.Element.Element
-    public typealias CellFactory<Element: Equatable> = (TableViewItemsController<CollectionType>, UITableView, IndexPath, Element) -> UITableViewCell
-    public typealias CellConfig<Element, Cell> = (Cell, IndexPath, Element) -> Void
+    public typealias CellFactory<Element: Equatable> = (TableViewItemsController<CollectionType, CellType>, UITableView, IndexPath, Element) -> UITableViewCell
+    public typealias CellConfig<Element> = (CellType, IndexPath, Element) -> Void
     
     private let cellFactory: CellFactory<Element>
+    private let cellConfig: CellConfig<Element>
     private var collection: CollectionType!
     
     /// Should the table updates be animated or static.
@@ -34,7 +37,7 @@ CollectionType.Element.Element: Hashable {
     )
     
     /// The table view for the data source
-    var tableView: UITableView!
+    weak var tableView: UITableView!
     
     /// A fallback data source to implement custom logic like indexes, dragging, etc.
     public var dataSource: UITableViewDataSource?
@@ -46,19 +49,13 @@ CollectionType.Element.Element: Hashable {
     /// - Parameter cellIdentifier: A cell identifier to use to dequeue cells from the source table view
     /// - Parameter cellType: A type to cast dequeued cells as
     /// - Parameter cellConfig: A closure to call before displaying each cell
-    public init<CellType>(cellIdentifier: String, cellType: CellType.Type, cellConfig: @escaping CellConfig<Element, CellType>) where CellType: UITableViewCell {
+    public init(cellIdentifier: String, cellType: CellType.Type, cellConfig: @escaping CellConfig<Element>) {
         cellFactory = { dataSource, tableView, indexPath, value in
             let cell = tableView.dequeueReusableCell(withIdentifier: cellIdentifier, for: indexPath) as! CellType
             cellConfig(cell, indexPath, value)
             return cell
         }
-    }
-    
-    
-    /// An initializer that takes a closure expected to return a dequeued cell ready to be displayed in the table view.
-    /// - Parameter cellFactory: A `(TableViewItemsController<CollectionType>, UITableView, IndexPath, Element) -> UITableViewCell` closure. Use the table input parameter to dequeue a cell and configure it with the `Element`'s data
-    public init(cellFactory: @escaping CellFactory<Element>) {
-        self.cellFactory = cellFactory
+        self.cellConfig = cellConfig
     }
     
     deinit {
@@ -95,18 +92,37 @@ CollectionType.Element.Element: Hashable {
             return
         }
         
-        // Commit the changes to the table view sections
-        tableView.beginUpdates()
-        for sectionIndex in 0..<items.count {
+        var deletions: [IndexPath] = []
+        var insertions: [IndexPath] = []
+        var moves: [(IndexPath, IndexPath)] = []
+        
+        items.enumerated().forEach { sectionIndex, items in
             let rowAtIndex = fromRow(sectionIndex)
-            let changes = delta(newList: items[sectionIndex], oldList: collection[sectionIndex])
-            tableView.deleteRows(at: changes.removals.map(rowAtIndex), with: rowAnimations.delete)
-            tableView.insertRows(at: changes.insertions.map(rowAtIndex), with: rowAnimations.insert)
-            for move in changes.moves {
-                tableView.moveRow(at: rowAtIndex(move.0), to: rowAtIndex(move.1))
-            }
+            
+            let changes = delta(newList: items.map { $0.id }, oldList: collection[sectionIndex].map { $0.id })
+            
+            deletions.append(contentsOf: changes.removals.map(rowAtIndex))
+            insertions.append(contentsOf: changes.insertions.map(rowAtIndex))
+            moves.append(contentsOf: changes.moves.map { (rowAtIndex($0.0), rowAtIndex($0.1)) })
         }
+        
         collection = items
+        
+        // Commit the changes to the table view sections
+        tableView.performBatchUpdates {
+            if !deletions.isEmpty {
+                tableView.deleteRows(at: deletions, with: rowAnimations.delete)
+            }
+            if !insertions.isEmpty {
+                tableView.insertRows(at: insertions, with: rowAnimations.insert)
+            }
+            for move in moves {
+                tableView.moveRow(at: move.0, to: move.1)
+            }
+        } completion: { [weak self] _ in
+//            self?.tableView.cellForRow(at: <#T##IndexPath#>)
+        }
+        
         tableView.endUpdates()
     }
     

@@ -13,7 +13,9 @@ extension UITableView {
     /// - Parameter cellType: The required cell type for table rows.
     /// - Parameter cellConfig: A closure that receives an initialized cell and a collection element
     ///     and configures the cell for displaying in its containing table view.
-    public func sectionsSubscriber<CellType, Items>(cellIdentifier: String, cellType: CellType.Type, cellConfig: @escaping TableViewItemsController<Items>.CellConfig<Items.Element.Element, CellType>)
+    public func sectionsSubscriber<CellType, Items>(cellIdentifier: String,
+                                                    cellType: CellType.Type,
+                                                    cellConfig: @escaping TableViewItemsController<Items, CellType>.CellConfig<Items.Element.Element>)
         -> AnySubscriber<Items, Never> where CellType: UITableViewCell,
         Items: RandomAccessCollection,
         Items.Element: RandomAccessCollection,
@@ -24,8 +26,9 @@ extension UITableView {
     
     /// A table view specific `Subscriber` that receives `[[Element]]` input and updates a sectioned table view.
     /// - Parameter source: A configured `TableViewItemsController<Items>` instance.
-    public func sectionsSubscriber<Items>(_ source: TableViewItemsController<Items>)
+    public func sectionsSubscriber<CellType, Items>(_ source: TableViewItemsController<Items, CellType>)
         -> AnySubscriber<Items, Never> where
+        CellType: UITableViewCell,
         Items: RandomAccessCollection,
         Items.Element: RandomAccessCollection,
         Items.Element: Equatable {
@@ -52,7 +55,9 @@ extension UITableView {
     /// - Parameter cellType: The required cell type for table rows.
     /// - Parameter cellConfig: A closure that receives an initialized cell and a collection element
     ///     and configures the cell for displaying in its containing table view.
-    public func rowsSubscriber<CellType, Items>(cellIdentifier: String, cellType: CellType.Type, cellConfig: @escaping TableViewItemsController<[Items]>.CellConfig<Items.Element, CellType>)
+    public func rowsSubscriber<CellType, Items>(cellIdentifier: String,
+                                                cellType: CellType.Type,
+                                                cellConfig: @escaping TableViewItemsController<[Items], CellType>.CellConfig<Items.Element>)
         -> AnySubscriber<Items, Never> where CellType: UITableViewCell,
         Items: RandomAccessCollection,
         Items: Equatable {
@@ -62,7 +67,7 @@ extension UITableView {
     
     /// A table view specific `Subscriber` that receives `[Element]` input and updates a single section table view.
     /// - Parameter source: A configured `TableViewItemsController<Items>` instance.
-    public func rowsSubscriber<Items>(_ source: TableViewItemsController<[Items]>)
+    public func rowsSubscriber<CellType, Items>(_ source: TableViewItemsController<[Items], CellType>)
         -> AnySubscriber<Items, Never> where
         Items: RandomAccessCollection,
         Items: Equatable {
