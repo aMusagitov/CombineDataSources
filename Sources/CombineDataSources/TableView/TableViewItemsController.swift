@@ -66,6 +66,7 @@ where CollectionType: RandomAccessCollection,
     private let fromRow = {(section: Int) in return {(row: Int) in return IndexPath(row: row, section: section)}}
     
     func updateCollection(_ items: CollectionType) {
+        guard tableView.window != nil else { return }
         // Initial collection
         if collection == nil, animated {
             guard tableView.numberOfSections == 0 else {
@@ -92,61 +93,31 @@ where CollectionType: RandomAccessCollection,
             return
         }
         
-        var deletions: [IndexPath] = []
-        var insertions: [IndexPath] = []
-        var moves: [(IndexPath, IndexPath)] = []
+        let (deletions, insertions, moves, notChanged) = calculateDatasourceDelta(oldSource: collection, newSource: items)
         
-        var notChanged: [IndexPath] = []
-        
-        items.enumerated().forEach { section, items in
-            let rowAtIndex = fromRow(section)
-            
-            let changesById = delta(newList: items.map { $0.id },
-                                    oldList: collection[section].map { $0.id })
-            
-            let delta = delta(newList: items, oldList: collection[section])
-            for row in 0 ..< items.count {
-                guard !delta.insertions.contains(row),
-                      !delta.removals.contains(row),
-                      !delta.moves.contains(where: { $0 == row || $1 == row }) else {
-                    continue
-                }
-                notChanged.append(.init(row: row, section: section))
-            }
-            
-            deletions.append(contentsOf: changesById.removals.map(rowAtIndex))
-            insertions.append(contentsOf: changesById.insertions.map(rowAtIndex))
-            moves.append(contentsOf: changesById.moves.map { (rowAtIndex($0.0), rowAtIndex($0.1)) })
+        tableView.beginUpdates()
+        if !deletions.isEmpty {
+            tableView.deleteRows(at: deletions, with: rowAnimations.delete)
         }
         
-        collection = items
+        if !insertions.isEmpty {
+            tableView.insertRows(at: insertions, with: rowAnimations.insert)
+        }
         
-        // Commit the changes to the table view sections
-        tableView.performBatchUpdates {
-            if !deletions.isEmpty {
-                tableView.deleteRows(at: deletions, with: rowAnimations.delete)
-            }
-            
-            if !insertions.isEmpty {
-                tableView.insertRows(at: insertions, with: rowAnimations.insert)
-            }
-            
-            for move in moves {
-                tableView.moveRow(at: move.0, to: move.1)
-            }
-        } completion: { [weak self] _ in
-            guard let indexPathsForVisibleRows = self?.tableView
-                .indexPathsForVisibleRows?
-                .filter({ !notChanged.contains($0) }) else { return }
-            
-            indexPathsForVisibleRows.forEach { indexPath in
-                guard let self = self,
-                      self.collection.count > indexPath.section,
-                      self.collection[indexPath.section].count > indexPath.row,
-                      let cell = self.tableView.cellForRow(at: indexPath) as? CellType else { return }
-                let item = self.collection[indexPath.section][indexPath.row]
-                self.cellConfig(cell, indexPath, item)
-            }
+        for move in moves {
+            tableView.moveRow(at: move.0, to: move.1)
+        }
+        collection = items
+        tableView.endUpdates()
+        
+        guard let indexPathsForVisibleRows = tableView.indexPathsForVisibleRows?.filter({ !notChanged.contains($0) }) else { return }
+        
+        indexPathsForVisibleRows.forEach { indexPath in
+            guard self.collection.count > indexPath.section,
+                  self.collection[indexPath.section].count > indexPath.row,
+                  let cell = self.tableView.cellForRow(at: indexPath) as? CellType else { return }
+            let item = self.collection[indexPath.section][indexPath.row]
+            self.cellConfig(cell, indexPath, item)
         }
     }
     
@@ -181,6 +152,39 @@ where CollectionType: RandomAccessCollection,
     // MARK: - Fallback data source object
     override public func forwardingTarget(for aSelector: Selector!) -> Any? {
         return dataSource
+    }
+    
+    private func calculateDatasourceDelta(oldSource: CollectionType, newSource: CollectionType) -> (deletions: [IndexPath],
+                                                                                                    insertions: [IndexPath],
+                                                                                                    moves: [(IndexPath, IndexPath)],
+                                                                                                    notChanged: [IndexPath]) {
+        var deletions: [IndexPath] = []
+        var insertions: [IndexPath] = []
+        var moves: [(IndexPath, IndexPath)] = []
+        
+        var notChanged: [IndexPath] = []
+        
+        newSource.enumerated().forEach { section, items in
+            let rowAtIndex = fromRow(section)
+            
+            let changesById = delta(newList: items.map { $0.id },
+                                    oldList: oldSource[section].map { $0.id })
+            
+            let delta = delta(newList: items, oldList: oldSource[section])
+            for row in 0 ..< items.count {
+                guard !delta.insertions.contains(row),
+                      !delta.removals.contains(row),
+                      !delta.moves.contains(where: { $0 == row || $1 == row }) else {
+                    continue
+                }
+                notChanged.append(.init(row: row, section: section))
+            }
+            
+            deletions.append(contentsOf: changesById.removals.map(rowAtIndex))
+            insertions.append(contentsOf: changesById.insertions.map(rowAtIndex))
+            moves.append(contentsOf: changesById.moves.map { (rowAtIndex($0.0), rowAtIndex($0.1)) })
+        }
+        return (deletions, insertions, moves, notChanged)
     }
 }
 
