@@ -65,7 +65,7 @@ where CollectionType: RandomAccessCollection,
     // MARK: - Update collection
     private let fromRow = {(section: Int) in return {(row: Int) in return IndexPath(row: row, section: section)}}
     
-    func updateCollection(_ items: CollectionType) {
+    public func updateCollection(_ items: CollectionType) {
         guard tableView.window != nil else { return }
         // Initial collection
         if collection == nil, animated {
